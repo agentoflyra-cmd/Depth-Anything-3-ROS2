@@ -14,25 +14,25 @@ class DepthAnything3Node(Node):
     """ROS2 Node for Depth Anything 3 monocular depth estimation."""
 
     def __init__(self):
-        super().__init__('depth_anything_3_node')
+        super().__init__("depth_anything_3_node")
 
         # Declare parameters
-        self.declare_parameter('image_topic', '/camera/color/image_raw')
-        self.declare_parameter('depth_image_topic', '/depth')
-        self.declare_parameter('device', 'cuda:0')
-        self.declare_parameter('model_name', 'depth-anything/DA3-Large')
+        self.declare_parameter("image_topic", "/camera/color/image_raw")
+        self.declare_parameter("depth_image_topic", "/depth")
+        self.declare_parameter("device", "cuda:0")
+        self.declare_parameter("model_name", "depth-anything/DA3-Large")
 
         # Get parameters
-        self.image_topic = self.get_parameter('image_topic').value
-        self.depth_image_topic = self.get_parameter('depth_image_topic').value
-        self.device = self.get_parameter('device').value
-        self.model_name = self.get_parameter('model_name').value
+        self.image_topic = self.get_parameter("image_topic").value
+        self.depth_image_topic = self.get_parameter("depth_image_topic").value
+        self.device = self.get_parameter("device").value
+        self.model_name = self.get_parameter("model_name").value
 
-        self.get_logger().info(f'Initializing Depth Anything 3 Node')
-        self.get_logger().info(f'Input topic: {self.image_topic}')
-        self.get_logger().info(f'Output topic: {self.depth_image_topic}')
-        self.get_logger().info(f'Device: {self.device}')
-        self.get_logger().info(f'Model: {self.model_name}')
+        self.get_logger().info(f"Initializing Depth Anything 3 Node")
+        self.get_logger().info(f"Input topic: {self.image_topic}")
+        self.get_logger().info(f"Output topic: {self.depth_image_topic}")
+        self.get_logger().info(f"Device: {self.device}")
+        self.get_logger().info(f"Model: {self.model_name}")
 
         # Initialize CV Bridge
         self.bridge = CvBridge()
@@ -40,45 +40,45 @@ class DepthAnything3Node(Node):
         # Load Depth Anything 3 model
         try:
             from depth_anything_3.api import DepthAnything3
-            self.get_logger().info('Loading Depth Anything 3 model...')
+
+            self.get_logger().info("Loading Depth Anything 3 model...")
             self.model = DepthAnything3.from_pretrained(self.model_name)
 
             # Set device
-            if 'cuda' in self.device and torch.cuda.is_available():
+            if "cuda" in self.device and torch.cuda.is_available():
                 self.model = self.model.to(self.device)
-                self.get_logger().info(f'Model loaded on {self.device}')
+                self.get_logger().info(f"Model loaded on {self.device}")
             else:
-                self.model = self.model.to('cpu')
-                self.device = 'cpu'
-                self.get_logger().info('CUDA not available, using CPU')
+                self.model = self.model.to("cpu")
+                self.device = "cpu"
+                self.get_logger().info("CUDA not available, using CPU")
 
         except ImportError:
-            self.get_logger().error('Could not import depth_anything_3. Please install it first.')
-            self.get_logger().error('pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git')
+            self.get_logger().error(
+                "Could not import depth_anything_3. Please install it first."
+            )
+            self.get_logger().error(
+                "pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git"
+            )
             raise
         except Exception as e:
-            self.get_logger().error(f'Failed to load model: {str(e)}')
+            self.get_logger().error(f"Failed to load model: {str(e)}")
             raise
 
         # Create subscriber and publisher
         self.subscription = self.create_subscription(
-            Image,
-            self.image_topic,
-            self.image_callback,
-            10)
+            Image, self.image_topic, self.image_callback, 10
+        )
 
-        self.publisher = self.create_publisher(
-            Image,
-            self.depth_image_topic,
-            10)
+        self.publisher = self.create_publisher(Image, self.depth_image_topic, 10)
 
-        self.get_logger().info('Depth Anything 3 Node initialized successfully')
+        self.get_logger().info("Depth Anything 3 Node initialized successfully")
 
     def image_callback(self, msg):
         """Callback function for processing incoming images."""
         try:
             # Convert ROS Image message to OpenCV image
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
 
             # Convert BGR to RGB
             rgb_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
@@ -91,7 +91,7 @@ class DepthAnything3Node(Node):
                 prediction = self.model.inference([pil_image])
 
             # Extract depth map
-            depth = prediction['depth'][0]  # Get first image depth [H, W]
+            depth = prediction.depth[0]  # Get first image depth [H, W]
 
             # Normalize depth for visualization (convert to uint16)
             # DA3 outputs metric or relative depth depending on model variant
@@ -103,19 +103,21 @@ class DepthAnything3Node(Node):
             depth_max = depth_normalized.max()
 
             if depth_max > depth_min:
-                depth_scaled = ((depth_normalized - depth_min) / (depth_max - depth_min) * 65535.0).astype(np.uint16)
+                depth_scaled = (
+                    (depth_normalized - depth_min) / (depth_max - depth_min) * 65535.0
+                ).astype(np.uint16)
             else:
                 depth_scaled = np.zeros_like(depth_normalized, dtype=np.uint16)
 
             # Convert to ROS Image message
-            depth_msg = self.bridge.cv2_to_imgmsg(depth_scaled, encoding='16UC1')
+            depth_msg = self.bridge.cv2_to_imgmsg(depth_scaled, encoding="16UC1")
             depth_msg.header = msg.header  # Preserve timestamp and frame_id
 
             # Publish depth image
             self.publisher.publish(depth_msg)
 
         except Exception as e:
-            self.get_logger().error(f'Error processing image: {str(e)}')
+            self.get_logger().error(f"Error processing image: {str(e)}")
 
 
 def main(args=None):
@@ -127,11 +129,11 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(f'Error: {e}')
+        print(f"Error: {e}")
     finally:
         if rclpy.ok():
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
