@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
+from lib import utils
+import cv2
+import numpy as np
 import rclpy
+import torch
+from cv_bridge import CvBridge
+from PIL import Image as PILImage
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-import numpy as np
-import torch
-import cv2
-from PIL import Image as PILImage
 
 
 class DepthAnything3Node(Node):
@@ -28,7 +29,7 @@ class DepthAnything3Node(Node):
         self.device = self.get_parameter("device").value
         self.model_name = self.get_parameter("model_name").value
 
-        self.get_logger().info(f"Initializing Depth Anything 3 Node")
+        self.get_logger().info("Initializing Depth Anything 3 Node...")
         self.get_logger().info(f"Input topic: {self.image_topic}")
         self.get_logger().info(f"Output topic: {self.depth_image_topic}")
         self.get_logger().info(f"Device: {self.device}")
@@ -36,6 +37,9 @@ class DepthAnything3Node(Node):
 
         # Initialize CV Bridge
         self.bridge = CvBridge()
+
+        # set colormap used for testing
+        self.colormap = "turbo"
 
         # Load Depth Anything 3 model
         try:
@@ -55,10 +59,13 @@ class DepthAnything3Node(Node):
 
         except ImportError:
             self.get_logger().error(
-                "Could not import depth_anything_3. Please install it first."
+                ("Could not import depth_anything_3.", " Please install it first.")
             )
             self.get_logger().error(
-                "pip install git+https://github.com/ByteDance-Seed/Depth-Anything-3.git"
+                (
+                    "pip install git",
+                    "https://github.com/ByteDance-Seed/Depth-Anything-3.git",
+                )
             )
             raise
         except Exception as e:
@@ -66,13 +73,16 @@ class DepthAnything3Node(Node):
             raise
 
         # Create subscriber and publisher
-        self.subscription = self.create_subscription(
+        self.rgb_sub_ = self.create_subscription(
             Image, self.image_topic, self.image_callback, 10
         )
 
-        self.publisher = self.create_publisher(Image, self.depth_image_topic, 10)
+        self.depth_pub_ = self.create_publisher(Image, self.depth_image_topic, 10)
+        self.colored_pub_ = self.create_publisher(
+            Image, self.depth_image_topic + "_colored", 10
+        )
 
-        self.get_logger().info("Depth Anything 3 Node initialized successfully")
+        self.get_logger().info("Depth Anything 3 Node initialized.")
 
     def image_callback(self, msg):
         """Callback function for processing incoming images."""
@@ -113,9 +123,17 @@ class DepthAnything3Node(Node):
             depth_msg = self.bridge.cv2_to_imgmsg(depth_scaled, encoding="16UC1")
             depth_msg.header = msg.header  # Preserve timestamp and frame_id
 
-            # Publish depth image
-            self.publisher.publish(depth_msg)
+            colored_depth_normalized = utils.colorize_depth(
+                depth_normalized, colormap=self.colormap
+            )
+            depth_colored_msg = self.bridge.cv2_to_imgmsg(
+                colored_depth_normalized, encoding="bgr8"
+            )
+            depth_colored_msg.header = msg.header
 
+            # Publish depth image
+            self.depth_pub_.publish(depth_msg)
+            self.colored_pub_.publish(depth_colored_msg)
         except Exception as e:
             self.get_logger().error(f"Error processing image: {str(e)}")
 
